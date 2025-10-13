@@ -25,7 +25,7 @@ def get_gp_name_from_round(year, round_num):
         event = ff1.get_event(year, round_num)
         return event["EventName"]
     except Exception as e:
-        print(f"?? Could not find GP for round {round_num}: {e}")
+        print(f"Could not find GP for round {round_num}: {e}")
         return None
 
 # ----------------------------------------------------
@@ -47,7 +47,7 @@ def fetch_race_data(year, gp_name):
         }).reset_index()
         return grouped
     except Exception as e:
-        print(f"?? Could not fetch race data for {gp_name} ({year}): {e}")
+        print(f"Could not fetch race data for {gp_name} ({year}): {e}")
         return pd.DataFrame()
 
 def fetch_qualifying_data(year, gp_name):
@@ -60,7 +60,7 @@ def fetch_qualifying_data(year, gp_name):
         q['GridPosition'] = q.groupby('DriverNumber')['LapTime'].transform('min').rank(method='first')
         return q.groupby('DriverNumber').agg({'GridPosition': 'first', 'LapTime': 'min'}).reset_index()
     except Exception as e:
-        print(f"?? Could not fetch qualifying data for {gp_name} ({year}): {e}")
+        print(f"Could not fetch qualifying data for {gp_name} ({year}): {e}")
         return pd.DataFrame()
 
 def prepare_dataset(qual_df, race_df):
@@ -93,7 +93,7 @@ def train_xgb(df):
     y = df['FinishPosition']
 
     if y.isnull().all() or y.nunique() <= 1:
-        print("?? Insufficient variation for XGBoost training. Skipping.")
+        print("Insufficient variation for XGBoost training. Skipping.")
         return None
 
     model = xgb.XGBRegressor(
@@ -122,7 +122,7 @@ def train_nn(df):
     y = df['FinishPosition'].values
 
     if len(X) == 0 or np.isnan(y).any():
-        print("?? Skipping NN training: invalid or empty data.")
+        print("Skipping NN training: invalid or empty data.")
         return None
 
     model = Sequential([
@@ -145,7 +145,7 @@ def make_predictions(year, gp_name):
     df = prepare_dataset(qual_df, race_df)
 
     if df.empty:
-        print("?? Not enough data to make predictions.")
+        print("Not enough data to make predictions.")
         return
 
     xgb_model = train_xgb(df)
@@ -161,7 +161,7 @@ def make_predictions(year, gp_name):
     safe_gp_name = gp_name.replace(" ", "_")
     out_file = os.path.join(output_dir, f"{year}_predicted_{safe_gp_name}.csv")
     df.to_csv(out_file, index=False)
-    print(f"? Predictions saved: {out_file}")
+    print(f"Predictions saved: {out_file}")
 
 # ----------------------------------------------------
 # Evaluation Logic
@@ -172,7 +172,7 @@ def evaluate_accuracy(year, gp_name):
     result_path = f"actual_results/{year}_{safe_gp_name}_results.csv"
 
     if not os.path.exists(pred_path) or not os.path.exists(result_path):
-        print("?? Missing prediction or result file.")
+        print("Missing prediction or result file.")
         return None
 
     preds = pd.read_csv(pred_path)
@@ -191,7 +191,7 @@ def evaluate_accuracy(year, gp_name):
 
     merged = preds.merge(actual, left_on=pred_driver_col, right_on=actual_driver_col, suffixes=("_pred", "_actual"))
     if merged.empty:
-        print("?? No matching drivers between predictions and results!")
+        print("No matching drivers between predictions and results!")
         return None
 
     # Try to locate the finish position column
@@ -201,7 +201,7 @@ def evaluate_accuracy(year, gp_name):
         None,
     )
     if not finish_col:
-        print(f"?? No finish position column found. Columns: {merged.columns.tolist()}")
+        print(f"No finish position column found. Columns: {merged.columns.tolist()}")
         return None
 
     # ---------- Compute metrics ----------
@@ -259,7 +259,7 @@ def update_model(year, gp_name):
     print(f"?? Updating model for {gp_name} ({year})")
 
     if not os.path.exists(pred_path) or not os.path.exists(result_path):
-        print("?? Missing prediction or result file for update.")
+        print("Missing prediction or result file for update.")
         return
 
     preds = pd.read_csv(pred_path)
@@ -270,7 +270,7 @@ def update_model(year, gp_name):
     actual_driver_col = next((c for c in actual.columns if "driver" in c.lower()), None)
 
     if not pred_driver_col or not actual_driver_col:
-        print("?? Could not find driver columns for update.")
+        print("Could not find driver columns for update.")
         return
 
     preds[pred_driver_col] = preds[pred_driver_col].astype(str).str.strip().str.upper()
@@ -279,7 +279,7 @@ def update_model(year, gp_name):
     merged = preds.merge(actual, left_on=pred_driver_col, right_on=actual_driver_col, suffixes=("_pred", "_actual"))
 
     if merged.empty:
-        print("?? No matching drivers between predictions and results!")
+        print("No matching drivers between predictions and results!")
         return
 
     finish_col = next(
@@ -288,7 +288,7 @@ def update_model(year, gp_name):
         None,
     )
     if not finish_col:
-        print(f"?? No finish position column found for update. Columns: {merged.columns.tolist()}")
+        print(f"No finish position column found for update. Columns: {merged.columns.tolist()}")
         return
 
     merged["TrueFinishPosition"] = merged[finish_col]
@@ -325,7 +325,7 @@ def update_model(year, gp_name):
     model_nn.fit(X, y, epochs=30, verbose=0)
     model_nn.save(nn_path)
 
-    print(f"? Model updated successfully for {gp_name} ({year})")
+    print(f"Model updated successfully for {gp_name} ({year})")
 
 # ----------------------------------------------------
 # CLI Entrypoint
@@ -341,10 +341,10 @@ def main():
     # Automatically resolve GP name if missing
     gp_name = args.gp_name or get_gp_name_from_round(args.year, args.round_num)
     if gp_name is None:
-        print(f"? Could not determine GP name for round {args.round_num}. Exiting.")
+        print(f"Could not determine GP name for round {args.round_num}. Exiting.")
         return
 
-    print(f"\n??? Round {args.round_num}: {gp_name} ({args.year})\n")
+    print(f"\nRound {args.round_num}: {gp_name} ({args.year})\n")
 
     if args.mode == "predict":
         make_predictions(args.year, gp_name)
