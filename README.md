@@ -1,7 +1,7 @@
-# 🏎️ mjNotFound-19  
+# 🏎️ Flat_Out_F1 
 **Formula 1 Race Prediction & Evaluation Framework**
 
-This project, **mjNotFound-19**, is a Python-based pipeline designed to **predict**, **evaluate**, and **incrementally update** Formula 1 race outcomes using **FastF1**, **XGBoost**, and **Neural Networks**. It leverages historical qualifying and race data to forecast finishing positions and iteratively improve its models after each race weekend.
+This project, **Flat_Out_F1**, is a Python-based pipeline designed to **predict**, **evaluate**, and **incrementally update** Formula 1 race outcomes using **FastF1**, **XGBoost**, and **Neural Networks**. It leverages historical qualifying and race data to forecast finishing positions and iteratively improve its models after each race weekend.
 
 ---
 
