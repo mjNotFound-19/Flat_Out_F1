@@ -1,0 +1,40 @@
+# -----------------------------
+# FLAT OUT F1 PROJECT GITIGNORE
+# Author: mjNotFound-19
+# -----------------------------
+
+# Python cache & logs
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.txt
+
+# Virtual environments
+venv/
+f1env/
+.env/
+
+# Data caches & runtime data
+cache/
+f1_cache/
+datasets_cache/
+actual_results/
+evaluation/
+predictions/
+models/
+Models/
+Datasets/
+
+# Build & dashboard assets
+f1_dashboard/
+f1_web/
+data/
+data_2025_build.py
+
+# Local app / test scripts
+app.py
+fast_f1.py
+test_laps.py
+predict_log.txt
+
