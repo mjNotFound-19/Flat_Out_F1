@@ -7,27 +7,51 @@ import os
 import plotly.express as px
 import difflib
 import requests
+from sklearn.metrics import mean_absolute_error
+from sklearn.preprocessing import StandardScaler
+import torch
+import torch.nn as nn
+import torch.optim as optim
 
 # -----------------------
-# Cache setup
+# Cache
 # -----------------------
 CACHE_DIR = "f1_cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 ff1.Cache.enable_cache(CACHE_DIR)
 
 # -----------------------
-# Circuit-specific static data
+# Circuit features
 # -----------------------
 CIRCUIT_FEATURES = {
-    "Monza": {"Length":5.793, "Corners":11, "OvertakingDifficulty":0.2},
-    "Silverstone": {"Length":5.891, "Corners":18, "OvertakingDifficulty":0.3},
-    "Suzuka": {"Length":5.807, "Corners":18, "OvertakingDifficulty":0.35},
-    "Azerbaijan": {"Length":6.003, "Corners":20, "OvertakingDifficulty":0.45},
-    # Add more circuits as needed
+    "Bahrain": {"Length": 5.412, "Corners": 15, "OvertakingDifficulty": 0.25},
+    "Jeddah": {"Length": 6.174, "Corners": 27, "OvertakingDifficulty": 0.40},
+    "Melbourne": {"Length": 5.278, "Corners": 14, "OvertakingDifficulty": 0.35},
+    "Suzuka": {"Length": 5.807, "Corners": 18, "OvertakingDifficulty": 0.35},
+    "Shanghai": {"Length": 5.451, "Corners": 16, "OvertakingDifficulty": 0.30},
+    "Miami": {"Length": 5.412, "Corners": 19, "OvertakingDifficulty": 0.35},
+    "Imola": {"Length": 4.909, "Corners": 19, "OvertakingDifficulty": 0.50},
+    "Monaco": {"Length": 3.337, "Corners": 19, "OvertakingDifficulty": 0.90},
+    "Montreal": {"Length": 4.361, "Corners": 14, "OvertakingDifficulty": 0.35},
+    "Barcelona": {"Length": 4.657, "Corners": 14, "OvertakingDifficulty": 0.45},
+    "Red Bull Ring": {"Length": 4.318, "Corners": 10, "OvertakingDifficulty": 0.25},
+    "Silverstone": {"Length": 5.891, "Corners": 18, "OvertakingDifficulty": 0.30},
+    "Hungaroring": {"Length": 4.381, "Corners": 14, "OvertakingDifficulty": 0.60},
+    "Spa": {"Length": 7.004, "Corners": 19, "OvertakingDifficulty": 0.30},
+    "Zandvoort": {"Length": 4.259, "Corners": 14, "OvertakingDifficulty": 0.55},
+    "Monza": {"Length": 5.793, "Corners": 11, "OvertakingDifficulty": 0.20},
+    "Baku": {"Length": 6.003, "Corners": 20, "OvertakingDifficulty": 0.45},
+    "Singapore": {"Length": 4.940, "Corners": 19, "OvertakingDifficulty": 0.75},
+    "Austin": {"Length": 5.513, "Corners": 20, "OvertakingDifficulty": 0.40},
+    "Mexico City": {"Length": 4.304, "Corners": 17, "OvertakingDifficulty": 0.35},
+    "Sao Paulo": {"Length": 4.309, "Corners": 15, "OvertakingDifficulty": 0.25},
+    "Las Vegas": {"Length": 6.201, "Corners": 17, "OvertakingDifficulty": 0.30},
+    "Lusail": {"Length": 5.419, "Corners": 16, "OvertakingDifficulty": 0.35},
+    "Abu Dhabi": {"Length": 5.281, "Corners": 16, "OvertakingDifficulty": 0.40}
 }
 
 # -----------------------
-# GP Resolution
+# Helper: get GP name
 # -----------------------
 def resolve_gp_input(year, gp_name=None, round_num=None):
     schedule = ff1.get_event_schedule(year)
@@ -41,224 +65,177 @@ def resolve_gp_input(year, gp_name=None, round_num=None):
             return matches[0]
         raise ValueError(f"No GP found matching '{gp_name}' in {year}.")
     if round_num:
-        if round_num <= len(schedule):
-            return schedule.iloc[round_num-1]['EventName']
-        else:
-            raise ValueError(f"Round {round_num} not found in {year}.")
+        return schedule.iloc[round_num-1]['EventName']
     raise ValueError("Must provide either gp_name or round_num")
 
 # -----------------------
-# Fetch historical race data
+# Data fetching
 # -----------------------
 def fetch_race_data(year, gp_name):
     try:
-        session = ff1.get_session(year, gp_name, 'R')
-        session.load(laps=True)
-        laps = session.laps
+        s = ff1.get_session(year, gp_name, 'R')
+        s.load(laps=True)
+        laps = s.laps
         df = laps[['Driver','LapNumber','Position','Stint','Compound','TyreLife','LapTime','PitInTime']].copy()
         df['LapTime'] = df['LapTime'].dt.total_seconds()
         df['PitStops'] = df['PitInTime'].notnull().astype(int)
         return df
-    except:
+    except Exception:
         return pd.DataFrame()
 
-# -----------------------
-# Fetch qualifying data
-# -----------------------
 def fetch_qualifying_data(year, gp_name):
     try:
-        session = ff1.get_session(year, gp_name, 'Q')
-        session.load(laps=True)
-        q = session.laps[['Driver','LapTime']].copy()
+        s = ff1.get_session(year, gp_name, 'Q')
+        s.load(laps=True)
+        q = s.laps[['Driver','LapTime']].copy()
         q['LapTime'] = q['LapTime'].dt.total_seconds()
         q['GridPosition'] = q.groupby('Driver')['LapTime'].transform('min').rank(method='first')
         return q.groupby('Driver').agg({'GridPosition':'first','LapTime':'min'}).reset_index()
-    except:
+    except Exception:
         return pd.DataFrame()
 
-# -----------------------
-# Fetch championship points (live Ergast or fallback)
-# -----------------------
 def fetch_championship_points(year):
-    driver_points = {}
-    constructor_points = {}
+    driver_points, constructor_points = {}, {}
     try:
-        url = f"https://ergast.com/api/f1/{year}/driverStandings.json"
-        r = requests.get(url, timeout=5)
+        r = requests.get(f"https://ergast.com/api/f1/{year}/driverStandings.json", timeout=5)
         r.raise_for_status()
-        standings_list = r.json()['MRData']['StandingsTable']['StandingsLists'][0]['DriverStandings']
-        for item in standings_list:
-            driver = item['Driver']['code']
+        standings = r.json()['MRData']['StandingsTable']['StandingsLists'][0]['DriverStandings']
+        for item in standings:
+            code = item['Driver'].get('code', item['Driver']['driverId'][:3].upper())
             pts = float(item['points'])
-            driver_points[driver] = pts
+            driver_points[code] = pts
             constructor = item['Constructors'][0]['name']
-            constructor_points[constructor] = constructor_points.get(constructor,0) + pts
-    except Exception as e:
-        print(f"Warning: Could not fetch live standings ({e}). Using zeros.")
-        driver_points = {}
-        constructor_points = {}
-    # Optional local CSV fallback
-    csv_file = f"points_{year}.csv"
-    if not driver_points and os.path.exists(csv_file):
-        df = pd.read_csv(csv_file)
-        driver_points = dict(zip(df['Driver'], df['Points']))
-        constructor_points = df.groupby('Constructor')['Points'].sum().to_dict()
+            constructor_points[constructor] = constructor_points.get(constructor, 0) + pts
+    except:
+        pass
     return driver_points, constructor_points
 
 # -----------------------
-# Compute historical averages
+# Features
 # -----------------------
-def compute_driver_historical_averages(historical_dfs, recency_weights=[0.6,0.3,0.1]):
-    hist_avg = []
+def compute_driver_historical_averages(historical_dfs):
+    hist = []
     for i, df in enumerate(historical_dfs):
-        if df.empty:
-            continue
-        weight = recency_weights[i] if i<len(recency_weights) else recency_weights[-1]
-        grouped = df.groupby('Driver').agg({
-            'LapTime':'mean',
-            'Stint':'mean',
-            'PitStops':'sum'
-        }).reset_index()
-        grouped[['LapTime','Stint','PitStops']] *= weight
-        hist_avg.append(grouped[['Driver','LapTime','Stint','PitStops']])
-    if not hist_avg:
+        if df.empty: continue
+        w = [0.6,0.3,0.1][i] if i < 3 else 0.1
+        g = df.groupby('Driver').agg({'LapTime':'mean','Stint':'mean','PitStops':'sum'}).reset_index()
+        g[['LapTime','Stint','PitStops']] *= w
+        hist.append(g)
+    if not hist:
         return pd.DataFrame(columns=['Driver','HistAvgLapTime','HistStints','HistPitStops'])
-    combined = pd.concat(hist_avg).groupby('Driver').sum().reset_index()
-    combined.rename(columns={'LapTime':'HistAvgLapTime','Stint':'HistStints','PitStops':'HistPitStops'}, inplace=True)
-    return combined
+    c = pd.concat(hist).groupby('Driver').sum().reset_index()
+    c.rename(columns={'LapTime':'HistAvgLapTime','Stint':'HistStints','PitStops':'HistPitStops'}, inplace=True)
+    return c
 
-# -----------------------
-# Compute driver form trend
-# -----------------------
-def compute_driver_form_trend(historical_dfs):
-    form_dict = {}
-    for df in historical_dfs[-6:]:
-        if df.empty:
-            continue
-        grouped = df.groupby('Driver')['LapTime'].mean()
-        for driver, lap_time in grouped.items():
-            if driver not in form_dict:
-                form_dict[driver] = []
-            form_dict[driver].append(lap_time)
-    trend_data = {}
-    for driver, laps in form_dict.items():
-        if len(laps) >= 6:
-            recent_avg = np.mean(laps[-3:])
-            previous_avg = np.mean(laps[:3])
-            trend_data[driver] = max(previous_avg - recent_avg, 0)
-        else:
-            trend_data[driver] = 0
-    return trend_data
-
-# -----------------------
-# Prepare dataset
-# -----------------------
-def prepare_dataset(qual_df, hist_df, driver_points, constructor_points, gp_name, driver_trend=None):
+def prepare_dataset(qual_df, hist_df, driver_points, constructor_points, gp_name):
     df = pd.merge(qual_df, hist_df, on='Driver', how='left')
-    for col in ['HistAvgLapTime','HistStints','HistPitStops']:
-        df[col] = df.get(col, 0)
-        df[col] = df[col].fillna(df[col].mean() if df[col].notnull().any() else 0)
+    for c in ['HistAvgLapTime','HistStints','HistPitStops']:
+        df[c] = df[c].fillna(df[c].mean() if df[c].notnull().any() else 0)
     df['DriverPoints'] = df['Driver'].map(driver_points).fillna(0)
-    # Map constructor points
-    # Simplified: assign constructor points based on driver mapping
-    constructor_map = {d: c for c in df['Driver'] for c in constructor_points.keys()}
-    df['ConstructorPoints'] = df['Driver'].map(lambda d: constructor_points.get(constructor_map.get(d,''),0)).fillna(0)
-    df['DriverFormBoost'] = df['Driver'].map(driver_trend).fillna(0) if driver_trend else 0
-    circuit = CIRCUIT_FEATURES.get(gp_name.split()[0], {'Length':5.5,'Corners':12,'OvertakingDifficulty':0.3})
-    for k,v in circuit.items():
+    df['ConstructorPoints'] = np.mean(list(constructor_points.values())) if constructor_points else 0
+    circuit = next((k for k in CIRCUIT_FEATURES if k.lower() in gp_name.lower()), "Monza")
+    for k,v in CIRCUIT_FEATURES[circuit].items():
         df[k] = v
     return df
 
 # -----------------------
-# Train model (XGBoost)
+# Neural net model
 # -----------------------
-def train_model(df):
+class F1PredictorNN(nn.Module):
+    def __init__(self, n_features):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_features, 64),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
+        )
+    def forward(self, x): return self.net(x)
+
+# -----------------------
+# Train models
+# -----------------------
+def train_xgb(df):
     features = ['GridPosition','HistAvgLapTime','HistPitStops','HistStints',
-                'DriverPoints','ConstructorPoints','Length','Corners','OvertakingDifficulty',
-                'DriverFormBoost']
+                'DriverPoints','ConstructorPoints','Length','Corners','OvertakingDifficulty']
     df['FinishPosition'] = df['HistAvgLapTime'].rank(method='first') + df['GridPosition']*0.5
-    X = df[features]
-    y = df['FinishPosition']
+    df = df.replace([np.inf,-np.inf],np.nan).dropna(subset=features+['FinishPosition'])
+    X, y = df[features], df['FinishPosition']
     model = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=300, max_depth=4, learning_rate=0.1)
     model.fit(X, y)
-    return model
+    print(f"? XGBoost trained. MAE={mean_absolute_error(y, model.predict(X)):.3f}")
+    return model, df, features
+
+def train_nn(df, features, epochs=300):
+    df = df.replace([np.inf,-np.inf],np.nan).dropna(subset=features)
+    X, y = df[features].values, df['FinishPosition'].values
+    scaler = StandardScaler(); X = scaler.fit_transform(X)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = F1PredictorNN(X.shape[1]).to(device)
+    opt = optim.Adam(model.parameters(), lr=0.001)
+    loss_fn = nn.MSELoss()
+    X_t = torch.tensor(X, dtype=torch.float32).to(device)
+    y_t = torch.tensor(y, dtype=torch.float32).unsqueeze(1).to(device)
+    for _ in range(epochs):
+        opt.zero_grad(); out = model(X_t); loss = loss_fn(out, y_t); loss.backward(); opt.step()
+    print(f"? Neural Net trained. MAE={mean_absolute_error(y, model(X_t).detach().cpu().numpy()):.3f}")
+    return model, scaler
 
 # -----------------------
-# Monte Carlo simulation
+# Predict
 # -----------------------
-def simulate_race(df, model, simulations=3000):
-    features = ['GridPosition','HistAvgLapTime','HistPitStops','HistStints',
-                'DriverPoints','ConstructorPoints','Length','Corners','OvertakingDifficulty',
-                'DriverFormBoost']
-    driver_positions = {driver: [] for driver in df['Driver']}
-    for _ in range(simulations):
-        lap_mod = np.random.normal(0,0.3,len(df))
-        tire_deg = np.random.uniform(0,0.5,len(df))
-        preds = model.predict(df[features]) + lap_mod + tire_deg
-        final_order = pd.Series(preds,index=df['Driver']).sort_values().index
-        for pos, driver in enumerate(final_order,1):
-            driver_positions[driver].append(pos)
-    summary = []
-    for driver, positions in driver_positions.items():
-        summary.append({
-            'Driver':driver,
-            'PredictedPosition':np.mean(positions),
-            'ProbWin':np.mean([p==1 for p in positions])
-        })
-    return pd.DataFrame(summary).sort_values('PredictedPosition')
+def predict(df, xgb_model, nn_model, scaler, features, alpha=0.5):
+    X = df[features].values
+    X = scaler.transform(X)
+    X_t = torch.tensor(X, dtype=torch.float32)
+    with torch.no_grad(): nn_pred = nn_model(X_t).squeeze().numpy()
+    xgb_pred = xgb_model.predict(df[features])
+    combined = alpha * nn_pred + (1 - alpha) * xgb_pred
+    df['PredXGB'], df['PredNN'], df['PredHybrid'] = xgb_pred, nn_pred, combined
+    return df
 
 # -----------------------
-# Visualization
+# Save predictions
 # -----------------------
-def save_interactive_html(df, filename):
-    fig = px.bar(df, x='Driver', y='PredictedPosition', hover_data=['ProbWin'], title='F1 Race Prediction')
+def save_predictions(df, year, gp_name):
+    os.makedirs("predictions/csv", exist_ok=True)
+    os.makedirs("predictions/html", exist_ok=True)
+    csv_path = f"predictions/csv/{year}_predicted_{gp_name.replace(' ','_')}.csv"
+    df[['Driver','PredXGB','PredNN','PredHybrid']].to_csv(csv_path,index=False)
+    fig = px.bar(df.sort_values('PredHybrid'), x='Driver', y='PredHybrid', title=f'{gp_name} Prediction (Hybrid)')
     fig.update_layout(yaxis=dict(autorange="reversed"))
-    fig.write_html(filename)
-    print(f"Interactive HTML saved as {filename}")
+    html_path = f"predictions/html/{year}_predicted_{gp_name.replace(' ','_')}.html"
+    fig.write_html(html_path)
+    print(f"?? Saved {csv_path}\n?? Saved {html_path}")
 
 # -----------------------
 # Main
 # -----------------------
-if __name__=='__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gp', type=str)
-    parser.add_argument('--round_num', type=int)
-    parser.add_argument('--year', type=int, default=pd.Timestamp.now().year)
-    parser.add_argument('--seasons', nargs='+', type=int, default=[2022,2023,2024])
-    parser.add_argument('--qual_csv', type=str, help="CSV file for qualifying override")
+    parser = add_argument("--round_num", type=int, required=True)
+    parser.add_argument("--gp")
+    parser.add_argument("--year", type=int, default=pd.Timestamp.now().year)
     args = parser.parse_args()
 
     gp_name = resolve_gp_input(args.year, gp_name=args.gp, round_num=(args.round_num+1))
-    print(f"Predicting for GP: {gp_name} ({args.year})")
+    print(f"?? Predicting {gp_name} ({args.year})")
 
-    historical_dfs = [fetch_race_data(y, gp_name) for y in args.seasons]
+    # Load data
+    hist = [fetch_race_data(y, gp_name) for y in [2022,2023,2024]]
+    qual = fetch_qualifying_data(args.year, gp_name)
+    dp, cp = fetch_championship_points(args.year)
+    hist_avg = compute_driver_historical_averages(hist)
+    train_df = prepare_dataset(qual, hist_avg, dp, cp, gp_name)
+    train_df['FinishPosition'] = train_df['HistAvgLapTime'].rank(method='first') + train_df['GridPosition']*0.5
 
-    if args.qual_csv and os.path.exists(args.qual_csv):
-        qual_df = pd.read_csv(args.qual_csv)
-        print(f"Using qualifying data from {args.qual_csv}")
-    else:
-        qual_df = fetch_qualifying_data(args.year, gp_name)
+    # Train both models
+    xgb_model, df, features = train_xgb(train_df)
+    nn_model, scaler = train_nn(df, features, epochs=200)
 
-    driver_points, constructor_points = fetch_championship_points(args.year)
-    hist_avgs = compute_driver_historical_averages(historical_dfs)
-    driver_trend = compute_driver_form_trend(historical_dfs)
-
-    train_df = prepare_dataset(qual_df, hist_avgs, driver_points, constructor_points, gp_name, driver_trend)
-
-    model = train_model(train_df)
-    predictions = simulate_race(train_df, model, simulations=3000)
-
-    CSV_DIR = os.path.join("predictions", "csv")
-    HTML_DIR = os.path.join("predictions", "html")
-    os.makedirs(CSV_DIR, exist_ok=True)
-    os.makedirs(HTML_DIR, exist_ok=True)
-
-    csv_file = os.path.join(CSV_DIR, f'{args.year}_predicted_{gp_name.replace(" ","_")}.csv')
-    html_file = os.path.join(HTML_DIR, f'{args.year}_predicted_{gp_name.replace(" ","_")}.html')
-
-    predictions.to_csv(csv_file, index=False)
-    save_interactive_html(predictions, html_file)
-
-    print(f"CSV saved to {csv_file}")
-    print(f"Interactive HTML saved to {html_file}")
+    # Combine predictions
+    df = predict(df, xgb_model, nn_model, scaler, features, alpha=0.6)
+    save_predictions(df, args.year, gp_name)
 
