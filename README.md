@@ -128,7 +128,6 @@ Top-10 Accuracy: 90.00%
 - **Cache Optimization** — Uses FastF1’s caching to avoid redundant downloads.  
 - **Safe Training** — Handles NaNs, infinite values, and empty data gracefully.  
 - **Cross-Model Ensemble** — Combines XGBoost and Neural Net predictions for balance.  
-- **Human-readable logs** — Uses emoji markers like `??`, `?`, `???` for progress clarity.
 
 ---
 
