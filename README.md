@@ -96,14 +96,14 @@ This will:
 ## 📊 Example Output
 
 ```
-??? Round 18: Japan Grand Prix (2025)
+Round 18: Japan Grand Prix (2025)
 
-?? Generating prediction for Japan Grand Prix (2025)
-? Predictions saved: /predictions/csv/2025_predicted_Japan_Grand_Prix.csv
+Generating prediction for Japan Grand Prix (2025)
+Predictions saved: /predictions/csv/2025_predicted_Japan_Grand_Prix.csv
 
-?? Accuracy Report for Japan Grand Prix (2025)
+Accuracy Report for Japan Grand Prix (2025)
 MAE: 1.83
-Overall Accuracy: 90.85%
+Overall Accuracy: 80.00%
 Winner Accuracy: 100.00%
 Top-3 Accuracy: 66.67%
 Top-10 Accuracy: 90.00%
