@@ -103,7 +103,7 @@ This will:
 
 ?? Accuracy Report for Japan Grand Prix (2025)
 MAE: 1.83
-Overall Accuracy: 90.85%
+Overall Accuracy: 80.00%
 Winner Accuracy: 100.00%
 Top-3 Accuracy: 66.67%
 Top-10 Accuracy: 90.00%
