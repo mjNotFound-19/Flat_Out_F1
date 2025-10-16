@@ -1,6 +1,6 @@
 # 🏁 Race Prediction Results — mjNotFound-19
 
-A summary of model performance across evaluated Grand Prix events.
+A summary of model performance across evaluated from Australia 2025 - Singapore 2025.
 
 | 🧩 Metric | 📊 Value |
 |------------|-----------|
