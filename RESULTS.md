@@ -1,4 +1,4 @@
-# 🏁 Race Prediction Results — mjNotFound-19
+# 🏁 Overall Accuracy from Predictions
 
 A summary of model performance across evaluated from Australia 2025 - Singapore 2025.
 
