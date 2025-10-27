@@ -1,11 +1,11 @@
 # 🏁 Overall Accuracy from Predictions
 
-A summary of model performance across evaluated from Australia 2025 - COTA 2025.
+A summary of model performance across evaluated from Australia 2025 - Mexico 2025.
 
 | 🧩 Metric | 📊 Value |
 |------------|-----------|
-| **Winner Accuracy** | 🏆 **73.68 %** |
-| **Top-3 Accuracy** | 🥉 **77.92 %** |
+| **Winner Accuracy** | 🏆 **75.00 %** |
+| **Top-3 Accuracy** | 🥉 **76.67 %** |
 | **Top-10 Accuracy** | 🔟 **70.00 %** |
 
 
